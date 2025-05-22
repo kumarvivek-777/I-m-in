@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Group Photo Assistant</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #4285F4;
+            margin-bottom: 30px;
+        }
+        .step {
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .step.active {
+            display: block;
+        }
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .step-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ddd;
+            margin: 0 5px;
+        }
+        .step-dot.active {
+            background-color: #4285F4;
+        }
+        #camera-container {
+            position: relative;
+            margin: 20px auto;
+            width: 100%;
+            max-width: 500px;
+        }
+        video, canvas, #resultCanvas {
+            width: 100%;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+        }
+        #overlayCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        button {
+            background-color: #4285F4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #3367D6;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #countdown {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 20px 0;
+            color: #4285F4;
+        }
+        .instructions {
+            background-color: #E8F0FE;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>Group Photo Assistant</h1>
+    
+    <div class="step-indicator">
+        <div class="step-dot active" id="step1-dot"></div>
+        <div class="step-dot" id="step2-dot"></div>
+        <div class="step-dot" id="step3-dot"></div>
+        <div class="step-dot" id="step4-dot"></div>
+    </div>
+
+    
+    <div class="step active" id="step1">
+        <h2>Step 1: Setup Your Group Shot</h2>
+        <div class="instructions">
+            <p>Position your group for the photo, leaving space where the photographer (you) will stand.</p>
+            <p>The camera will capture this first shot, then guide someone else to take the second shot with you in it.</p>
+        </div>
+        <div id="camera-container">
+            <video id="video" autoplay></video>
+        </div>
+        <button id="start-btn">Start</button>
+    </div>
+
+    
+    <div class="step" id="step2">
+        <h2>Step 2: Capture Group Photo</h2>
+        <div class="instructions">
+            <p>Frame your group shot and capture the photo. Make sure to leave space where you'll stand later.</p>
+            <p>After capturing, hand the phone to someone else in the group.</p>
+        </div>
+        <div id="camera-container">
+            <video id="video2" autoplay></video>
+        </div>
+        <button id="capture-group-btn">Capture Group Photo</button>
+        <div id="countdown"></div>
+    </div>
+
+    
+    <div class="step" id="step3">
+        <h2>Step 3: Add the Photographer</h2>
+        <div class="instructions">
+            <p>Now hand the phone to someone else in the group.</p>
+            <p>They should frame the shot to match the first photo, with you standing in the empty space.</p>
+            <p>The semi-transparent overlay shows the original shot for alignment.</p>
+        </div>
+        <div id="camera-container">
+            <video id="video3" autoplay></video>
+            <canvas id="overlayCanvas"></canvas>
+        </div>
+        <button id="capture-photographer-btn">Capture With Photographer</button>
+        <div id="countdown2"></div>
+    </div>
+
+    
+    <div class="step" id="step4">
+        <h2>Step 4: Your Perfect Group Photo</h2>
+        <div class="instructions">
+            <p>Here's your final photo with everyone included!</p>
+            <p>The AI has blended both shots to create a seamless group photo.</p>
+        </div>
+        <canvas id="resultCanvas"></canvas>
+        <button id="save-btn">Save Photo</button>
+        <button id="retake-btn">Retake</button>
+    </div>
+
+    <canvas id="canvas" style="display: none;"></canvas>
+
+    <script>
+        
+        const steps = document.querySelectorAll('.step');
+        const stepDots = document.querySelectorAll('.step-dot');
+        const startBtn = document.getElementById('start-btn');
+        const captureGroupBtn = document.getElementById('capture-group-btn');
+        const capturePhotographerBtn = document.getElementById('capture-photographer-btn');
+        const saveBtn = document.getElementById('save-btn');
+        const retakeBtn = document.getElementById('retake-btn');
+        const countdown = document.getElementById('countdown');
+        const countdown2 = document.getElementById('countdown2');
+        
+        
+        const video = document.getElementById('video');
+        const video2 = document.getElementById('video2');
+        const video3 = document.getElementById('video3');
+        
+      
+        const canvas = document.getElementById('canvas');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const resultCanvas = document.getElementById('resultCanvas');
+        
+        
+        let currentStep = 1;
+        let groupPhoto = null;
+        let photographerPhoto = null;
+        let videoStream = null;
+        let videoStream2 = null;
+        let videoStream3 = null;
+
+       
+        startBtn.addEventListener('click', () => {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+                .then(stream => {
+                    videoStream = stream;
+                    video.srcObject = stream;
+                    nextStep();
+                })
+                .catch(err => {
+                    console.error("Camera error: ", err);
+                    alert("Could not access the camera. Please ensure you've granted camera permissions.");
+                });
+        });
+
+        
+        captureGroupBtn.addEventListener('click', () => {
+            startCountdown(3, countdown, () => {
+                captureImage(video2, (img) => {
+                    groupPhoto = img;
+                    
+                    
+                    overlayCanvas.width = img.width;
+                    overlayCanvas.height = img.height;
+                    const ctx = overlayCanvas.getContext('2d');
+                    ctx.globalAlpha = 0.5;
+                    ctx.drawImage(groupPhoto, 0, 0);
+                    
+                    nextStep();
+                });
+            });
+        });
+
+        
+        capturePhotographerBtn.addEventListener('click', () => {
+            startCountdown(3, countdown2, () => {
+                captureImage(video3, (img) => {
+                    photographerPhoto = img;
+                    mergePhotos();
+                    nextStep();
+                });
+            });
+        });
+
+        
+        saveBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'group-photo.png';
+            link.href = resultCanvas.toDataURL('image/png');
+            link.click();
+        });
+
+        
+        retakeBtn.addEventListener('click', () => {
+            
+            if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+            if (videoStream2) videoStream2.getTracks().forEach(track => track.stop());
+            if (videoStream3) videoStream3.getTracks().forEach(track => track.stop());
+            
+            
+            groupPhoto = null;
+            photographerPhoto = null;
+            currentStep = 1;
+            
+        
+            document.getElementById('step1').classList.add('active');
+            for (let i = 2; i <= 4; i++) {
+                document.getElementById(`step${i}`).classList.remove('active');
+            }
+            
+            
+            stepDots.forEach((dot, index) => {
+                dot.classList.toggle('active', index === 0);
+            });
+            
+        
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+                .then(stream => {
+                    videoStream = stream;
+                    video.srcObject = stream;
+                });
+        });
+
+        
+        function captureImage(videoElement, callback) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = videoElement.videoWidth;
+            tempCanvas.height = videoElement.videoHeight;
+            const ctx = tempCanvas.getContext('2d');
+            ctx.drawImage(videoElement, 0, 0, tempCanvas.width, tempCanvas.height);
+            
+            const img = new Image();
+            img.src = tempCanvas.toDataURL('image/png');
+            img.onload = () => callback(img);
+        }
+
+        
+        function startCountdown(seconds, countdownElement, callback) {
+            let counter = seconds;
+            countdownElement.textContent = counter;
+            
+            const countdownInterval = setInterval(() => {
+                counter--;
+                countdownElement.textContent = counter;
+                
+                if (counter <= 0) {
+                    clearInterval(countdownInterval);
+                    countdownElement.textContent = "";
+                    callback();
+                }
+            }, 1000);
+        }
+
+       
+        function mergePhotos() {
+            resultCanvas.width = groupPhoto.width;
+            resultCanvas.height = groupPhoto.height;
+            const ctx = resultCanvas.getContext('2d');
+            
+           
+            ctx.drawImage(groupPhoto, 0, 0);
+            
+            
+            ctx.globalAlpha = 0.7;
+            ctx.drawImage(photographerPhoto, 0, 0);
+            
+          
+            ctx.globalAlpha = 1.0;
+        }
+
+        
+        function nextStep() {
+            
+            if (currentStep === 1 && videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                
+          
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+                    .then(stream => {
+                        videoStream2 = stream;
+                        video2.srcObject = stream;
+                    });
+            } else if (currentStep === 2 && videoStream2) {
+                videoStream2.getTracks().forEach(track => track.stop());
+                
+                
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+                    .then(stream => {
+                        videoStream3 = stream;
+                        video3.srcObject = stream;
+                    });
+            }
+            
+            
+            steps[currentStep - 1].classList.remove('active');
+            stepDots[currentStep - 1].classList.remove('active');
+            
+            currentStep++;
+            
+            if (currentStep <= steps.length) {
+                steps[currentStep - 1].classList.add('active');
+                stepDots[currentStep - 1].classList.add('active');
+            }
+        }
+    </script>
+</body>
+</html>
